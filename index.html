@@ -1,0 +1,512 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>Запись на диагностику</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  /* Шрифт Unbounded лежит рядом, в папке fonts (латиница и кириллица, ~55 КБ на начертание) */
+  @font-face { font-family: "Unbounded"; src: url("fonts/Unbounded-400.woff") format("woff"); font-weight: 400; font-display: swap; }
+  @font-face { font-family: "Unbounded"; src: url("fonts/Unbounded-500.woff") format("woff"); font-weight: 500; font-display: swap; }
+  @font-face { font-family: "Unbounded"; src: url("fonts/Unbounded-600.woff") format("woff"); font-weight: 600; font-display: swap; }
+  @font-face { font-family: "Unbounded"; src: url("fonts/Unbounded-700.woff") format("woff"); font-weight: 700; font-display: swap; }
+
+  /* Фирменные цвета — как в презентациях NikolayMath */
+  :root {
+    --blue: #0500d6;        /* главный синий: ленты, выбранное, кнопки */
+    --blue-soft: #d6d6f3;   /* светлый синий: фокус, подсветка */
+    --bg: #f5f5f8;          /* фон страницы */
+    --card: #e3e3e3;        /* серые плашки */
+    --field: #ffffff;       /* поля ввода */
+    --text: #000000;
+    --muted: #6b6b6b;       /* серые подписи */
+    --red: #ff0000;         /* акцент: сердечко и ошибки — понемногу */
+    --line: #d0d0d6;
+    --font: "Unbounded", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --mono: "Liberation Mono", "Courier New", Courier, monospace;  /* как подписи «ты всё сдашь!» */
+    --doc-font: "Times New Roman", Times, "Liberation Serif", Tinos, serif;  /* тексты документов */
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); }
+  html { overflow-x: hidden; }
+  body { font: 400 14px/1.45 var(--font); padding: 0 16px 120px; max-width: 560px; margin: 0 auto; overflow-x: hidden; }
+  button, input, textarea, select { font-family: var(--font); }
+  .hidden { display: none !important; }
+
+  /* Шапка: надпись моноширинным и синяя наклонная лента, как на слайдах */
+  .tag { font: 700 12px/1 var(--mono); color: var(--muted); text-align: center; margin: 16px 0 10px; }
+  .head { margin: 0 -16px; padding: 8px 0; overflow: hidden; }
+  .band { position: relative; margin: 0 -24px; padding: 16px 40px 18px; background: var(--blue); color: #fff;
+          transform: rotate(-2deg); text-align: center; }
+  .band h1 { margin: 0; font-size: 19px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.01em; line-height: 1.15; }
+  .sub { color: var(--muted); font: 700 12px/1.4 var(--mono); text-align: center; margin: 18px 0 14px; }
+  .steps { display: flex; gap: 6px; margin: 0 0 22px; }
+  .steps i { flex: 1; height: 4px; background: var(--card); }
+  .steps i.on { background: var(--blue); }
+  h2 { font-size: 13px; font-weight: 600; color: var(--blue); margin: 22px 0 10px; }
+  h2:first-child { margin-top: 0; }
+
+  /* Часовой пояс */
+  .select { position: relative; }
+  .select::after { content: ""; position: absolute; right: 16px; top: 50%; width: 7px; height: 7px; margin-top: -6px;
+                   border-right: 2px solid var(--blue); border-bottom: 2px solid var(--blue); transform: rotate(45deg); pointer-events: none; }
+  select { width: 100%; appearance: none; -webkit-appearance: none; border: 1.5px solid var(--card); border-radius: 4px; background: var(--field);
+           color: var(--text); font-size: 13px; padding: 13px 40px 13px 14px; outline: none; }
+  select:focus { border-color: var(--blue); }
+
+  /* Дни */
+  .days { display: flex; gap: 8px; overflow-x: auto; padding: 2px 16px 8px; margin: 0 -16px; scrollbar-width: none; scroll-snap-type: x proximity; }
+  .days::-webkit-scrollbar { display: none; }
+  .day { flex: 0 0 62px; scroll-snap-align: start; border: 0; border-radius: 4px; background: var(--card);
+         color: var(--text); padding: 10px 0 9px; text-align: center; cursor: pointer; }
+  .day .wd { font-size: 10px; color: var(--muted); text-transform: uppercase; }
+  .day .dn { font-size: 20px; font-weight: 600; line-height: 1.2; margin: 3px 0; }
+  .day .mn { font-size: 10px; color: var(--muted); }
+  .day.on { background: var(--blue); color: #fff; }
+  .day.on .wd, .day.on .mn { color: #fff; opacity: .8; }
+
+  /* Время и чипы */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 8px; }
+  .chip { border: 0; border-radius: 4px; background: var(--card); color: var(--text);
+          font-size: 13px; padding: 12px 8px; cursor: pointer; font-variant-numeric: tabular-nums; }
+  .grid .chip { font-size: 15px; }
+  .chip.on { background: var(--blue); color: #fff; font-weight: 600; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chips .chip { padding: 10px 14px; }
+  .seg { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .seg .chip { padding: 12px 8px; }
+  .note { color: var(--muted); font-size: 11px; margin: 8px 2px 0; }
+
+  /* Поля */
+  label.f { display: block; margin: 0 0 12px; }
+  label.f span { display: block; font-size: 11px; color: var(--muted); margin: 0 0 6px 2px; }
+  input, textarea { width: 100%; border: 1.5px solid var(--card); border-radius: 4px; background: var(--field);
+                    color: var(--text); font-size: 14px; padding: 12px 14px; outline: none; }
+  input::placeholder, textarea::placeholder { color: #a3a3a8; }
+  input:focus, textarea:focus { border-color: var(--blue); }
+  textarea { min-height: 84px; resize: vertical; }
+  .err input, .err textarea, .err .chip { box-shadow: inset 0 0 0 1.5px var(--red); }
+  .msg { color: var(--red); font-size: 11px; margin: 6px 2px 0; }
+
+  /* Сводка */
+  .card { background: var(--card); border-radius: 4px; padding: 4px 16px; }
+  .row { display: flex; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1.5px solid var(--bg); font-size: 12px; }
+  .row:last-child { border-bottom: 0; }
+  .row b { font-weight: 500; text-align: right; overflow-wrap: anywhere; }
+  .row span { color: var(--muted); flex-shrink: 0; }
+  .when { font-size: 18px; font-weight: 600; color: var(--blue); margin: 0 0 4px; }
+
+  .consent { display: flex; gap: 12px; align-items: flex-start; margin: 18px 0 6px; cursor: pointer; }
+  .consent input { width: 22px; height: 22px; flex: 0 0 22px; margin: 1px 0 0; accent-color: var(--blue); }
+  .consent div { font-size: 12px; }
+  details { margin: 10px 0 0; background: var(--card); border-radius: 4px; padding: 12px 14px; }
+  details summary { cursor: pointer; color: var(--blue); font-size: 12px; font-weight: 500; }
+  details pre { white-space: pre-wrap; font: 400 15px/1.5 var(--doc-font); color: var(--text); margin: 10px 0 0; }
+
+  .empty { text-align: center; padding: 32px 8px; color: var(--muted); font-size: 12px; }
+  .empty b { display: block; color: var(--blue); font-size: 15px; font-weight: 600; margin-bottom: 8px; }
+
+  .foot { font: 700 11px/1.5 var(--mono); color: var(--muted); text-align: center; margin: 36px 0 0; }
+  .foot .heart { color: var(--red); }
+
+  /* Нижняя кнопка — как синяя лента */
+  .bar { position: fixed; left: 0; right: 0; bottom: 0; padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+         background: var(--bg); border-top: 1.5px solid var(--card); display: flex; gap: 8px; }
+  .bar button { flex: 1; border: 0; border-radius: 4px; padding: 16px 12px; font-size: 13px; font-weight: 600; text-transform: uppercase;
+                letter-spacing: 0.02em; background: var(--blue); color: #fff; cursor: pointer; }
+  .bar button.back { flex: 0 0 auto; background: var(--card); color: var(--text); font-weight: 500; text-transform: none; }
+  .bar button:disabled { background: #9c9ad6; }
+</style>
+</head>
+<body>
+
+<p class="tag">ты всё сдашь!</p>
+<div class="head"><div class="band"><h1 id="title">Запись на диагностику</h1></div></div>
+<p class="sub" id="subtitle">бесплатно · онлайн · около 40 минут</p>
+<div class="steps" id="steps"></div>
+
+<!-- Шаг 1: время -->
+<section id="step-time">
+  <div id="slots-box">
+    <h2>Ваш часовой пояс</h2>
+    <div class="select"><select id="tz"></select></div>
+    <p class="note">Время ниже показано по этому поясу. Проверьте, что он ваш.</p>
+    <h2>День</h2>
+    <div class="days" id="days"></div>
+    <h2>Время</h2>
+    <div class="grid" id="times"></div>
+    <p class="note hidden" id="msk-note"></p>
+  </div>
+  <div class="empty hidden" id="no-slots">
+    <b>Свободных окошек пока нет</b>
+    Закройте это окно — в чате можно встать в лист ожидания.
+  </div>
+</section>
+
+<!-- Шаг 2: анкета -->
+<section id="step-form" class="hidden">
+  <h2>Кто оформляет запись</h2>
+  <div class="seg" id="who">
+    <button class="chip" data-v="parent">Я родитель</button>
+    <button class="chip" data-v="adult">Я ученик, мне 18+</button>
+  </div>
+  <p class="note">Если ученику нет 18 лет, запись оформляет родитель или законный представитель.</p>
+
+  <h2>Контакты</h2>
+  <label class="f" id="f-name"><span id="name-label">Ваше имя</span>
+    <input id="name" maxlength="100" autocomplete="given-name" placeholder="Например, Анна"></label>
+  <label class="f hidden" id="f-student"><span>Имя ученика</span>
+    <input id="student" maxlength="100" placeholder="Например, Петя"></label>
+
+  <h2>Класс</h2>
+  <div class="chips" id="grade">
+    <button class="chip" data-v="8">8 класс</button>
+    <button class="chip" data-v="9">9 класс</button>
+    <button class="chip" data-v="10">10 класс</button>
+    <button class="chip" data-v="11">11 класс</button>
+    <button class="chip" data-v="other">Другое</button>
+  </div>
+
+  <h2>Экзамен</h2>
+  <div class="chips" id="exam">
+    <button class="chip" data-v="oge">ОГЭ</button>
+    <button class="chip" data-v="ege_prof">ЕГЭ профиль</button>
+    <button class="chip" data-v="unknown">Пока не определились</button>
+  </div>
+
+  <h2>Как с вами связаться</h2>
+  <div class="seg" id="contact">
+    <button class="chip" data-v="tg">В Telegram</button>
+    <button class="chip" data-v="phone">По телефону</button>
+  </div>
+  <label class="f hidden" id="f-phone" style="margin-top:12px"><span>Телефон</span>
+    <input id="phone" type="tel" inputmode="tel" maxlength="20" autocomplete="tel" placeholder="+7 900 123-45-67"></label>
+
+  <div id="f-comment">
+    <h2>Цель (необязательно)</h2>
+    <label class="f"><textarea id="comment" maxlength="500" placeholder="Например: сдать ОГЭ на 5, подтянуть геометрию"></textarea></label>
+  </div>
+  <p class="msg hidden" id="form-msg">Заполните, пожалуйста, отмеченные поля</p>
+</section>
+
+<!-- Шаг 3: проверка и согласие -->
+<section id="step-confirm" class="hidden">
+  <h2>Проверьте</h2>
+  <div class="card" id="summary"></div>
+
+  <label class="consent">
+    <input type="checkbox" id="consent">
+    <div>Даю согласие на обработку персональных данных, моих и ученика, на условиях согласия и политики ниже</div>
+  </label>
+  <p class="msg hidden" id="consent-msg">Без согласия записаться не получится</p>
+  <details id="d-consent"><summary>Текст согласия</summary><pre id="consent-text">Загружаю…</pre></details>
+  <details id="d-policy"><summary>Политика обработки персональных данных</summary><pre id="policy-text">Загружаю…</pre></details>
+</section>
+
+<p class="foot">NikolayMath — подготовка к ОГЭ и ЕГЭ<br>по математике без паники <span class="heart">♥</span></p>
+
+<div class="bar" id="bar">
+  <button class="back hidden" id="b-back">Назад</button>
+  <button id="b-main">Далее</button>
+</div>
+
+<script>
+(function () {
+  var tg = window.Telegram && window.Telegram.WebApp;
+  var inTg = !!(tg && tg.platform && tg.platform !== 'unknown');
+  var params = new URLSearchParams(location.search);
+  var mode = params.get('m') === 'wait' ? 'wait' : 'book';
+
+  var WD = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+  var MON = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+  var MON_FULL = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+  var WD_FULL = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота'];
+  var EXAMS = { oge: 'ОГЭ', ege_prof: 'ЕГЭ профиль', unknown: 'Пока не определились' };
+
+  // ---- Часовые пояса. Окошки задаются по Москве, клиенту показываются в выбранном поясе.
+  var ZONES = [
+    ['Россия', [
+      ['Europe/Kaliningrad', 'Калининград'],
+      ['Europe/Moscow', 'Москва, Санкт-Петербург'],
+      ['Europe/Samara', 'Самара, Ижевск'],
+      ['Asia/Yekaterinburg', 'Екатеринбург, Уфа, Пермь, Челябинск'],
+      ['Asia/Omsk', 'Омск'],
+      ['Asia/Novosibirsk', 'Новосибирск, Красноярск, Томск'],
+      ['Asia/Irkutsk', 'Иркутск, Улан-Удэ'],
+      ['Asia/Yakutsk', 'Якутск, Чита'],
+      ['Asia/Vladivostok', 'Владивосток, Хабаровск'],
+      ['Asia/Magadan', 'Магадан, Сахалин'],
+      ['Asia/Kamchatka', 'Камчатка']
+    ]],
+    ['Другие страны', [
+      ['Europe/Minsk', 'Минск'],
+      ['Europe/Riga', 'Рига, Вильнюс, Таллин'],
+      ['Europe/Berlin', 'Берлин, Варшава, Прага'],
+      ['Europe/London', 'Лондон'],
+      ['Europe/Istanbul', 'Стамбул'],
+      ['Asia/Tbilisi', 'Тбилиси'],
+      ['Asia/Yerevan', 'Ереван'],
+      ['Asia/Baku', 'Баку'],
+      ['Asia/Dubai', 'Дубай'],
+      ['Asia/Tashkent', 'Ташкент'],
+      ['Asia/Almaty', 'Алматы, Астана'],
+      ['Asia/Bishkek', 'Бишкек'],
+      ['Asia/Bangkok', 'Бангкок, Пхукет'],
+      ['Asia/Makassar', 'Бали']
+    ]]
+  ];
+  var MSK = 'Europe/Moscow';
+  var fmtCache = {};
+  function lp(ms, tz) { // дата и время в поясе tz
+    var f = fmtCache[tz] || (fmtCache[tz] = new Intl.DateTimeFormat('en-GB', {
+      timeZone: tz, year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }));
+    var o = {};
+    f.formatToParts(new Date(ms)).forEach(function (p) { o[p.type] = p.value; });
+    var y = +o.year, mo = +o.month, d = +o.day, hh = (+o.hour) % 24;
+    return { y: y, mo: mo, d: d, hh: ('0' + hh).slice(-2), mm: o.minute,
+             wd: new Date(Date.UTC(y, mo - 1, d)).getUTCDay(), key: y * 10000 + mo * 100 + d };
+  }
+  function offsetMin(tz, ms) { var p = lp(ms, tz); return Math.round((Date.UTC(p.y, p.mo - 1, p.d, +p.hh, +p.mm) - ms) / 60000); }
+  function mskLabel(tz, ms) {
+    var diff = offsetMin(tz, ms) - offsetMin(MSK, ms);
+    if (!diff) return 'МСК';
+    var a = Math.abs(diff), h = Math.floor(a / 60), m = a % 60;
+    return 'МСК' + (diff > 0 ? '+' : '−') + h + (m ? ':' + ('0' + m).slice(-2) : '');
+  }
+  var deviceTz = '';
+  try { deviceTz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) {}
+  var tzOk = function (tz) { try { lp(Date.now(), tz); return true; } catch (e) { return false; } };
+
+  // ---- Окошки приходят от бота в адресе: s=ID.ГГММДДЧЧММ (время московское)
+  var slots = [];
+  (params.get('s') || '').split('_').forEach(function (p) {
+    var m = /^(\d{1,9})\.(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})$/.exec(p);
+    if (!m) return;
+    var utc = Date.UTC(2000 + +m[2], +m[3] - 1, +m[4], +m[5], +m[6]) - 3 * 3600e3; // МСК = UTC+3
+    slots.push({ id: +m[1], utc: utc });
+  });
+  slots.sort(function (a, b) { return a.utc - b.utc; });
+
+  var st = { step: mode === 'wait' ? 2 : 1, tz: MSK, day: null, slot: null,
+             who: null, grade: null, exam: null, contact: null, tried: false };
+  var STEPS = mode === 'wait' ? [2, 3] : [1, 2, 3];
+  var noSlots = !slots.length && mode === 'book';
+
+  var $ = function (id) { return document.getElementById(id); };
+  function haptic() { try { tg.HapticFeedback.selectionChanged(); } catch (e) {} }
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+
+  if (mode === 'wait') {
+    $('title').textContent = 'Лист ожидания';
+    $('subtitle').textContent = 'освободится место — свяжусь с вами в порядке очереди';
+    $('f-comment').classList.add('hidden');
+  }
+
+  // ---- Выбор пояса
+  (function buildTz() {
+    var sel = $('tz'), now = Date.now(), known = {};
+    ZONES.forEach(function (g) {
+      var og = document.createElement('optgroup'); og.label = g[0];
+      g[1].forEach(function (z) {
+        if (!tzOk(z[0])) return;
+        known[z[0]] = true;
+        var o = el('option', '', mskLabel(z[0], now) + ' · ' + z[1]); o.value = z[0]; og.appendChild(o);
+      });
+      sel.appendChild(og);
+    });
+    if (deviceTz && !known[deviceTz] && tzOk(deviceTz)) {
+      var o = el('option', '', mskLabel(deviceTz, now) + ' · как на устройстве (' + deviceTz.replace(/_/g, ' ') + ')');
+      o.value = deviceTz; sel.insertBefore(o, sel.firstChild);
+    }
+    st.tz = deviceTz && tzOk(deviceTz) ? deviceTz : MSK;
+    sel.value = st.tz;
+    sel.onchange = function () {
+      st.tz = sel.value; haptic();
+      if (st.slot) st.day = lp(st.slot.utc, st.tz).key;
+      renderDays(); renderTimes(); sync();
+    };
+  })();
+
+  // ---- Шаг 1: дни и время (в выбранном поясе)
+  function renderDays() {
+    var box = $('days'); box.innerHTML = '';
+    var seen = {};
+    slots.forEach(function (s) {
+      var p = lp(s.utc, st.tz);
+      if (seen[p.key]) return;
+      seen[p.key] = true;
+      if (st.day === null) st.day = p.key;
+      var b = el('button', 'day' + (p.key === st.day ? ' on' : ''));
+      b.appendChild(el('div', 'wd', WD[p.wd]));
+      b.appendChild(el('div', 'dn', String(p.d)));
+      b.appendChild(el('div', 'mn', MON[p.mo - 1]));
+      b.onclick = function () { st.day = p.key; st.slot = null; haptic(); renderDays(); renderTimes(); sync(); };
+      box.appendChild(b);
+    });
+    if (!seen[st.day] && slots.length) { st.day = lp(slots[0].utc, st.tz).key; renderDays(); }
+  }
+  function renderTimes() {
+    var box = $('times'); box.innerHTML = '';
+    slots.forEach(function (s) {
+      var p = lp(s.utc, st.tz);
+      if (p.key !== st.day) return;
+      var b = el('button', 'chip' + (st.slot === s ? ' on' : ''), p.hh + ':' + p.mm);
+      b.onclick = function () { st.slot = s; haptic(); renderTimes(); sync(); };
+      box.appendChild(b);
+    });
+    var note = $('msk-note');
+    if (st.slot && mskLabel(st.tz, st.slot.utc) !== 'МСК') {
+      var m = lp(st.slot.utc, MSK);
+      note.textContent = 'По Москве это ' + m.hh + ':' + m.mm + (m.key !== lp(st.slot.utc, st.tz).key ? ', ' + m.d + ' ' + MON_FULL[m.mo - 1] : '');
+      note.classList.remove('hidden');
+    } else note.classList.add('hidden');
+  }
+  if (noSlots) { $('slots-box').classList.add('hidden'); $('no-slots').classList.remove('hidden'); }
+
+  // ---- Шаг 2: кнопки-выборы
+  ['who', 'grade', 'exam', 'contact'].forEach(function (f) {
+    var box = $(f);
+    box.querySelectorAll('.chip').forEach(function (b) {
+      b.onclick = function () {
+        st[f] = b.dataset.v; haptic();
+        box.querySelectorAll('.chip').forEach(function (x) { x.classList.toggle('on', x === b); });
+        if (f === 'who') {
+          $('f-student').classList.toggle('hidden', st.who !== 'parent');
+          $('name-label').textContent = st.who === 'parent' ? 'Ваше имя' : 'Как вас зовут';
+        }
+        if (f === 'contact') $('f-phone').classList.toggle('hidden', st.contact !== 'phone');
+        if (st.tried) validate(true);
+        sync();
+      };
+    });
+  });
+  ['name', 'student', 'phone'].forEach(function (id) {
+    $(id).addEventListener('input', function () { if (st.tried) validate(true); sync(); });
+  });
+
+  function val(id) { return $(id).value.trim(); }
+  function phoneOk() { var d = val('phone').replace(/\D/g, ''); return d.length >= 10 && d.length <= 15; }
+  function validate(mark) {
+    var bad = {
+      who: !st.who,
+      'f-name': !val('name'),
+      'f-student': st.who === 'parent' && !val('student'),
+      grade: !st.grade,
+      exam: !st.exam,
+      contact: !st.contact,
+      'f-phone': st.contact === 'phone' && !phoneOk()
+    };
+    var ok = true;
+    Object.keys(bad).forEach(function (k) {
+      if (bad[k]) ok = false;
+      if (mark) $(k).classList.toggle('err', bad[k]);
+    });
+    if (mark) $('form-msg').classList.toggle('hidden', ok);
+    return ok;
+  }
+
+  // ---- Шаг 3: сводка
+  function addRow(box, k, v) { var r = el('div', 'row'); r.appendChild(el('span', '', k)); r.appendChild(el('b', '', v)); box.appendChild(r); }
+  function renderSummary() {
+    var box = $('summary'); box.innerHTML = '';
+    if (mode === 'book' && st.slot) {
+      var p = lp(st.slot.utc, st.tz), lab = mskLabel(st.tz, st.slot.utc), r = el('div', 'row'), w = el('div');
+      w.appendChild(el('div', 'when', p.d + ' ' + MON_FULL[p.mo - 1] + ', ' + p.hh + ':' + p.mm));
+      var m = lp(st.slot.utc, MSK);
+      w.appendChild(el('div', 'note', WD_FULL[p.wd] + ' · ' +
+        (lab === 'МСК' ? 'время московское' : 'ваше время (' + lab + '), по Москве ' + m.hh + ':' + m.mm) + ' · онлайн'));
+      r.appendChild(w); box.appendChild(r);
+    }
+    if (st.who === 'parent') { addRow(box, 'Родитель', val('name')); addRow(box, 'Ученик', val('student')); }
+    else addRow(box, 'Ученик', val('name') + ' (18+)');
+    addRow(box, 'Класс', st.grade === 'other' ? 'другое' : st.grade + ' класс');
+    addRow(box, 'Экзамен', EXAMS[st.exam]);
+    addRow(box, 'Связь', st.contact === 'phone' ? val('phone') : 'в Telegram');
+    if (mode === 'book' && val('comment')) addRow(box, 'Цель', val('comment'));
+  }
+
+  // ---- Тексты согласия и политики лежат рядом: consent.txt и policy.txt
+  var loaded = {};
+  function loadDoc(det, file, target) {
+    $(det).addEventListener('toggle', function () {
+      if (!$(det).open || loaded[file]) return;
+      loaded[file] = true;
+      fetch(file).then(function (r) { if (!r.ok) throw 0; return r.text(); })
+        .then(function (t) { $(target).textContent = t; })
+        .catch(function () { $(target).textContent = 'Не удалось загрузить текст. Его можно получить в чате с ботом.'; loaded[file] = false; });
+    });
+  }
+  loadDoc('d-consent', 'consent.txt', 'consent-text');
+  loadDoc('d-policy', 'policy.txt', 'policy-text');
+  $('consent').addEventListener('change', function () { $('consent-msg').classList.add('hidden'); haptic(); sync(); });
+
+  // ---- Навигация
+  function show() {
+    $('step-time').classList.toggle('hidden', st.step !== 1);
+    $('step-form').classList.toggle('hidden', st.step !== 2);
+    $('step-confirm').classList.toggle('hidden', st.step !== 3);
+    var bar = $('steps'); bar.innerHTML = '';
+    STEPS.forEach(function (n) { bar.appendChild(el('i', n <= st.step ? 'on' : '')); });
+    if (st.step === 3) renderSummary();
+    window.scrollTo(0, 0);
+    sync();
+  }
+  function mainText() {
+    if (noSlots) return 'Закрыть';
+    if (st.step === 1) {
+      if (!st.slot) return 'Выберите время';
+      var p = lp(st.slot.utc, st.tz);
+      return 'Далее · ' + p.d + ' ' + MON[p.mo - 1] + ', ' + p.hh + ':' + p.mm;
+    }
+    if (st.step === 2) return 'Далее';
+    return mode === 'wait' ? 'Встать в лист ожидания' : 'Записаться';
+  }
+  function mainEnabled() { return noSlots || st.step !== 1 || !!st.slot; }
+  function next() {
+    if (noSlots) { if (inTg) tg.close(); return; }
+    if (st.step === 1) { if (!st.slot) return; st.step = 2; return show(); }
+    if (st.step === 2) {
+      st.tried = true;
+      if (!validate(true)) { try { tg.HapticFeedback.notificationOccurred('error'); } catch (e) {} return; }
+      st.step = 3; return show();
+    }
+    if (!$('consent').checked) {
+      $('consent-msg').classList.remove('hidden');
+      try { tg.HapticFeedback.notificationOccurred('error'); } catch (e) {}
+      return;
+    }
+    submit();
+  }
+  function back() {
+    if (st.step === STEPS[0]) { if (inTg) tg.close(); return; }
+    st.step--; show();
+  }
+  function submit() {
+    var data = {
+      v: 2, m: mode, slot: mode === 'book' && st.slot ? st.slot.id : null, tz: st.tz,
+      who: st.who, name: val('name'), student_name: st.who === 'parent' ? val('student') : '',
+      grade: st.grade, exam: st.exam, contact: st.contact,
+      phone: st.contact === 'phone' ? val('phone') : '',
+      comment: mode === 'book' ? val('comment') : '', consent: true
+    };
+    var json = JSON.stringify(data);
+    if (inTg) { tg.sendData(json); }   // окно закроется, бот получит анкету
+    else { alert('Предпросмотр: в Telegram бот получил бы:\n\n' + json); }
+  }
+
+  // Нижняя кнопка — своя (шрифт Unbounded); «Назад» в Telegram — родная, в шапке окна
+  function sync() {
+    $('b-main').textContent = mainText(); $('b-main').disabled = !mainEnabled();
+    if (inTg) { if (st.step > STEPS[0]) tg.BackButton.show(); else tg.BackButton.hide(); }
+    else $('b-back').classList.toggle('hidden', st.step === STEPS[0]);
+  }
+  $('b-main').onclick = next; $('b-back').onclick = back;
+  if (inTg) { tg.ready(); tg.expand(); try { tg.setHeaderColor('#f5f5f8'); tg.setBackgroundColor('#f5f5f8'); tg.setBottomBarColor && tg.setBottomBarColor('#f5f5f8'); } catch (e) {} tg.BackButton.onClick(back); try { tg.MainButton.hide(); } catch (e) {} }
+
+  renderDays(); renderTimes(); show();
+})();
+</script>
+</body>
+</html>
