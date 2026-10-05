@@ -135,6 +135,7 @@
 <div class="app">
 
 <p class="preview hidden" id="preview">Предпросмотр: так окно выглядит у клиента в Telegram. Записаться отсюда нельзя — только через бота.</p>
+<p class="preview hidden" id="stale">Список окошек мог устареть. Закройте окно и напишите боту любое сообщение — он обновит кнопку.</p>
 <p class="tag">ты всё сдашь!</p>
 <div class="head"><div class="band"><h1 id="title">Запись на диагностику</h1></div></div>
 <p class="sub" id="subtitle">бесплатно · онлайн · около 40 минут</p>
@@ -538,6 +539,9 @@
   }
   $('b-main').onclick = next; $('b-back').onclick = back;
   if (!inTg) $('preview').classList.remove('hidden');
+  // Кнопку могли нажать спустя долгое время после того, как бот её прислал
+  var sentAt = parseInt(params.get('t'), 10);
+  if (inTg && sentAt && Date.now() / 1000 - sentAt > 2 * 3600 && mode === 'book') $('stale').classList.remove('hidden');
   if (inTg) { tg.ready(); tg.expand(); try { tg.setHeaderColor('#f5f5f8'); tg.setBackgroundColor('#f5f5f8'); tg.setBottomBarColor && tg.setBottomBarColor('#f5f5f8'); } catch (e) {} tg.BackButton.onClick(back); try { tg.MainButton.hide(); } catch (e) {} }
 
   renderDays(); renderTimes(); show();
