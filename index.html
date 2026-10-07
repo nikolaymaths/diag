@@ -137,7 +137,8 @@
   .phone { display: flex; align-items: stretch; }
   .phone b { display: flex; align-items: center; padding: 0 10px 0 14px; background: var(--card); border-radius: 4px 0 0 4px;
              font-weight: 600; font-size: 14px; border: 1.5px solid var(--card); border-right: 0; }
-  .phone input { border-radius: 0 4px 4px 0; letter-spacing: .02em; }
+  .phone input { border-radius: 0 4px 4px 0; letter-spacing: .06em; }
+  label.f > span.phone-hint { display: block; min-height: 16px; margin: 6px 2px 0; font-size: 12px; color: var(--muted); }
   .err .phone b { box-shadow: inset 0 0 0 1.5px var(--red); }
   /* Кнопка «Готово» над клавиатурой: прячет клавиатуру */
   .donebar { position: fixed; left: 0; right: 0; top: 0; z-index: 20; display: none; justify-content: flex-end;
@@ -215,7 +216,8 @@
   </div>
   <label class="f hidden" id="f-phone" style="margin-top:12px"><span id="phone-label">Номер телефона</span>
     <div class="phone"><b>+7</b><input id="phone" type="tel" inputmode="numeric" autocomplete="tel-national" enterkeyhint="done"
-      placeholder="(900) 123-45-67"></div></label>
+      placeholder="9001234567" pattern="[0-9]*"></div>
+    <span class="phone-hint" id="phone-hint"></span></label>
   <p class="foot-note">* WhatsApp — продукт компании Meta Platforms Inc., которая признана экстремистской организацией, её деятельность на территории Российской Федерации запрещена.</p>
 
   <div id="f-comment">
@@ -245,7 +247,7 @@
   <div class="done"><b>Готово!</b><p id="done-text">В Telegram анкета сейчас ушла бы боту, а окно закрылось бы.</p></div>
 </section>
 
-<p class="foot">NikolayMath — подготовка к ОГЭ и ЕГЭ<br>по математике без паники <span class="heart">♥</span></p>
+<p class="foot">NikolayMath — подготовка к ОГЭ и ЕГЭ<br>по математике без паники <span class="heart">♥</span><br><span style="opacity:.5">версия 14</span></p>
 
 <div class="donebar" id="donebar"><button type="button" id="b-done">Готово</button></div>
 
@@ -453,8 +455,9 @@
   function phoneDigits() { return $('phone').value.replace(/\D/g, ''); }
   function phoneOk() { return phoneDigits().length === 10; }
   function phoneFull() { var d = phoneDigits(); return '+7 (' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6, 8) + '-' + d.slice(8); }
-  // Маска телефона: только цифры (максимум 10), курсор остаётся на месте,
-  // а Backspace по скобке/дефису стирает цифру перед ним — ничего не нужно переносить вручную
+  // Телефон: в поле только цифры (10 штук после «+7»), без скобок и дефисов —
+  // поэтому стирать и исправлять можно где угодно, курсор нигде не «застревает».
+  // Красивый вид номера показывается строкой ниже.
   function fmtPhone(d) {
     var out = '';
     if (d.length) out = '(' + d.slice(0, 3);
@@ -463,33 +466,25 @@
     if (d.length > 8) out += '-' + d.slice(8, 10);
     return out;
   }
-  function caretAfterDigits(str, n) {
-    if (n <= 0) return str.indexOf('(') === 0 ? 1 : 0;
-    for (var i = 0, c = 0; i < str.length; i++) if (/\d/.test(str[i]) && ++c === n) return i + 1;
-    return str.length;
-  }
-  var phoneEl = $('phone'), lastKey = '';
-  phoneEl.addEventListener('keydown', function (e) { lastKey = e.key; });
-  phoneEl.addEventListener('beforeinput', function (e) { lastKey = e.inputType === 'deleteContentBackward' ? 'Backspace' : e.inputType === 'deleteContentForward' ? 'Delete' : ''; });
+  var phoneEl = $('phone');
   phoneEl.addEventListener('input', function () {
-    var el = this, raw = el.value, pos = el.selectionStart == null ? raw.length : el.selectionStart;
-    var prev = el.dataset.prev || '';
+    var el = this, raw = el.value;
+    if (/^\d{0,10}$/.test(raw) && raw[0] !== '7') { updPhoneHint(); return; }   // обычный ввод/удаление — ничего не трогаем
+    var pos = el.selectionStart == null ? raw.length : el.selectionStart;
     var before = raw.slice(0, pos).replace(/\D/g, '').length;
     var d = raw.replace(/\D/g, '');
-    // стёрли разделитель, а не цифру → стираем цифру рядом
-    if (d.length === prev.length && d === prev && (lastKey === 'Backspace' || lastKey === 'Delete')) {
-      if (lastKey === 'Backspace' && before > 0) { d = d.slice(0, before - 1) + d.slice(before); before--; }
-      else if (lastKey === 'Delete') { d = d.slice(0, before) + d.slice(before + 1); }
-    }
-    if (!prev && d[0] === '7') { d = d.slice(1); before = Math.max(0, before - 1); }   // «+7» уже стоит
-    if (d.length > 10 && (d[0] === '8' || d[0] === '7')) { d = d.slice(1); before = Math.max(0, before - 1); }
-    d = d.slice(0, 10); before = Math.min(before, d.length);
-    el.value = fmtPhone(d);
-    el.dataset.prev = d;
-    var c = caretAfterDigits(el.value, before);
-    try { el.setSelectionRange(c, c); } catch (e) {}
-    lastKey = '';
+    if (d[0] === '7' || (d.length > 10 && d[0] === '8')) { d = d.slice(1); before = Math.max(0, before - 1); }   // «+7» уже стоит
+    d = d.slice(0, 10);
+    el.value = d;
+    try { var c = Math.min(before, d.length); el.setSelectionRange(c, c); } catch (e) {}
+    updPhoneHint();
   });
+  function updPhoneHint() {
+    var d = phoneEl.value.replace(/\D/g, '');
+    var left = 10 - d.length, word = left === 1 ? 'цифра' : left < 5 ? 'цифры' : 'цифр';
+    $('phone-hint').textContent = d.length ? '+7 ' + fmtPhone(d) + (left > 0 ? '  · ещё ' + left + ' ' + word : '  ✓') : '';
+    if (st.tried) validate(true);   // ошибка пропадает сразу, как только номер стал полным
+  }
   function validate(mark) {
     var bad = {
       who: !st.who,
