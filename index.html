@@ -229,12 +229,14 @@
 <section id="step-confirm" class="hidden">
   <h2>Проверьте</h2>
   <div class="card" id="summary"></div>
+  <p class="foot-note hidden" id="summary-note">* WhatsApp — продукт компании Meta Platforms Inc., которая признана экстремистской организацией, её деятельность на территории Российской Федерации запрещена.</p>
 
   <label class="consent">
     <input type="checkbox" id="consent">
     <div>Даю согласие на обработку персональных данных, моих и ученика, на условиях согласия и политики ниже</div>
   </label>
   <p class="msg hidden" id="consent-msg">Без согласия записаться не получится</p>
+  <p class="msg hidden" id="send-msg">Не удалось отправить анкету. Проверьте интернет и нажмите ещё раз. Если не выйдет — закройте окно и напишите боту любое сообщение.</p>
   <details id="d-consent"><summary>Текст согласия</summary><pre id="consent-text">Загружаю…</pre></details>
   <details id="d-policy"><summary>Политика обработки персональных данных</summary><pre id="policy-text">Загружаю…</pre></details>
 </section>
@@ -440,8 +442,10 @@
       };
     });
   });
-  ['name', 'student', 'phone'].forEach(function (id) {
-    $(id).addEventListener('input', function () { if (st.tried) validate(true); sync(); });
+  // После любого изменения анкета перепроверяется: исправили поле — красная подсветка сразу исчезает
+  function recheck() { setTimeout(function () { if (st.tried) validate(true); sync(); }, 0); }
+  ['input', 'change', 'keyup', 'blur', 'compositionend', 'paste', 'cut'].forEach(function (ev) {
+    document.addEventListener(ev, function (e) { if (/^(INPUT|TEXTAREA)$/.test(e.target.tagName)) recheck(); }, true);
   });
 
   function val(id) { return $(id).value.trim(); }
@@ -449,18 +453,42 @@
   function phoneDigits() { return $('phone').value.replace(/\D/g, ''); }
   function phoneOk() { return phoneDigits().length === 10; }
   function phoneFull() { var d = phoneDigits(); return '+7 (' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6, 8) + '-' + d.slice(8); }
-  // Маска: только цифры, максимум 10; если вставили +7… или 8… — первая цифра отбрасывается
-  $('phone').addEventListener('input', function () {
-    var d = this.value.replace(/\D/g, '');
-    if (d[0] === '7') d = d.slice(1);                     // «+7» уже стоит — повторную 7 убираем
-    if (d.length > 10 && d[0] === '8') d = d.slice(1);    // набрали по привычке 8XXXXXXXXXX
-    d = d.slice(0, 10);
+  // Маска телефона: только цифры (максимум 10), курсор остаётся на месте,
+  // а Backspace по скобке/дефису стирает цифру перед ним — ничего не нужно переносить вручную
+  function fmtPhone(d) {
     var out = '';
     if (d.length) out = '(' + d.slice(0, 3);
-    if (d.length >= 3) out += ') ' + d.slice(3, 6);
-    if (d.length >= 6) out += '-' + d.slice(6, 8);
-    if (d.length >= 8) out += '-' + d.slice(8, 10);
-    this.value = out;
+    if (d.length > 3) out += ') ' + d.slice(3, 6);
+    if (d.length > 6) out += '-' + d.slice(6, 8);
+    if (d.length > 8) out += '-' + d.slice(8, 10);
+    return out;
+  }
+  function caretAfterDigits(str, n) {
+    if (n <= 0) return str.indexOf('(') === 0 ? 1 : 0;
+    for (var i = 0, c = 0; i < str.length; i++) if (/\d/.test(str[i]) && ++c === n) return i + 1;
+    return str.length;
+  }
+  var phoneEl = $('phone'), lastKey = '';
+  phoneEl.addEventListener('keydown', function (e) { lastKey = e.key; });
+  phoneEl.addEventListener('beforeinput', function (e) { lastKey = e.inputType === 'deleteContentBackward' ? 'Backspace' : e.inputType === 'deleteContentForward' ? 'Delete' : ''; });
+  phoneEl.addEventListener('input', function () {
+    var el = this, raw = el.value, pos = el.selectionStart == null ? raw.length : el.selectionStart;
+    var prev = el.dataset.prev || '';
+    var before = raw.slice(0, pos).replace(/\D/g, '').length;
+    var d = raw.replace(/\D/g, '');
+    // стёрли разделитель, а не цифру → стираем цифру рядом
+    if (d.length === prev.length && d === prev && (lastKey === 'Backspace' || lastKey === 'Delete')) {
+      if (lastKey === 'Backspace' && before > 0) { d = d.slice(0, before - 1) + d.slice(before); before--; }
+      else if (lastKey === 'Delete') { d = d.slice(0, before) + d.slice(before + 1); }
+    }
+    if (!prev && d[0] === '7') { d = d.slice(1); before = Math.max(0, before - 1); }   // «+7» уже стоит
+    if (d.length > 10 && (d[0] === '8' || d[0] === '7')) { d = d.slice(1); before = Math.max(0, before - 1); }
+    d = d.slice(0, 10); before = Math.min(before, d.length);
+    el.value = fmtPhone(d);
+    el.dataset.prev = d;
+    var c = caretAfterDigits(el.value, before);
+    try { el.setSelectionRange(c, c); } catch (e) {}
+    lastKey = '';
   });
   function validate(mark) {
     var bad = {
@@ -499,6 +527,8 @@
     addRow(box, 'Экзамен', EXAMS[st.exam]);
     addRow(box, 'Связь', st.contact === 'phone' ? 'звонок, ' + phoneFull() : st.contact === 'whatsapp' ? 'WhatsApp*, ' + phoneFull() : 'в Telegram');
     if (mode === 'book' && val('comment')) addRow(box, 'Цель', val('comment'));
+    var fn = $('summary-note');
+    if (fn) fn.classList.toggle('hidden', st.contact !== 'whatsapp');
   }
 
   // ---- Тексты согласия и политики лежат рядом: consent.txt и policy.txt
@@ -537,9 +567,10 @@
       return 'Далее · ' + p.d + ' ' + MON[p.mo - 1] + ', ' + p.hh + ':' + p.mm;
     }
     if (st.step === 2) return 'Далее';
+    if (sending) return 'Отправляю…';
     return mode === 'wait' ? 'Встать в лист ожидания' : 'Записаться';
   }
-  function mainEnabled() { return noSlots || st.step !== 1 || !!st.slot; }
+  function mainEnabled() { return !sending && (noSlots || st.step !== 1 || !!st.slot); }
   function next() {
     if (noSlots) { if (inTg) tg.close(); return; }
     if (st.step === 1) { if (!st.slot) return; st.step = 2; return show(); }
@@ -568,9 +599,22 @@
       comment: mode === 'book' ? val('comment') : '', consent: true
     };
     var json = JSON.stringify(data);
-    if (inTg) { tg.sendData(json); }   // окно закроется, бот получит анкету
-    else { st.step = 4; show(); }      // предпросмотр: показываем экран «Готово»
+    var api = params.get('api');
+    if (inTg && api && tg.initData) {          // окно открыто кнопкой под сообщением: отправляем анкету боту напрямую
+      sending = true; sync();
+      fetch(api.replace(/\/$/, '') + '/submit', { method: 'POST', headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ initData: tg.initData, data: data }) })
+        .then(function (r) { if (!r.ok) throw r.status; return r.json(); })
+        .then(function () { try { tg.HapticFeedback.notificationOccurred('success'); } catch (e) {} tg.close(); })
+        .catch(function () {
+          sending = false; sync();
+          $('send-msg').classList.remove('hidden');
+          try { tg.HapticFeedback.notificationOccurred('error'); } catch (e) {}
+        });
+    } else if (inTg) { tg.sendData(json); }   // окно открыто кнопкой внизу: окно закроется, бот получит анкету
+    else { st.step = 4; show(); }             // предпросмотр: показываем экран «Готово»
   }
+  var sending = false;
 
   // Нижняя кнопка — своя (шрифт Unbounded); «Назад» в Telegram — родная, в шапке окна
   function sync() {
