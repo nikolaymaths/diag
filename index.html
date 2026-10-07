@@ -92,7 +92,7 @@
 
   /* Поля */
   label.f { display: block; margin: 0 0 12px; }
-  label.f span { display: block; font-size: 11px; color: var(--muted); margin: 0 0 6px 2px; }
+  label.f > span { display: block; font-size: 11px; color: var(--muted); margin: 0 0 6px 2px; }
   input, textarea { width: 100%; border: 1.5px solid var(--card); border-radius: 4px; background: var(--field);
                     color: var(--text); font-size: 14px; padding: 12px 14px; outline: none; }
   input::placeholder, textarea::placeholder { color: #a3a3a8; }
@@ -129,6 +129,23 @@
                 letter-spacing: 0.02em; background: var(--blue); color: #fff; cursor: pointer; }
   .bar button.back { flex: 0 0 auto; background: var(--card); color: var(--text); font-weight: 500; text-transform: none; }
   .bar button:disabled { background: #9c9ad6; }
+  .seg3 { grid-template-columns: 1fr 1fr 1fr; }
+  #f-comment h2 { margin-top: 22px; }
+  .seg3 .chip { padding: 12px 4px; font-size: 12px; }
+  .foot-note { color: var(--muted); font-size: 10px; line-height: 1.45; margin: 8px 2px 0; }
+  /* Телефон: «+7» зафиксировано, клиент вводит только 10 цифр */
+  .phone { display: flex; align-items: stretch; }
+  .phone b { display: flex; align-items: center; padding: 0 10px 0 14px; background: var(--card); border-radius: 4px 0 0 4px;
+             font-weight: 600; font-size: 14px; border: 1.5px solid var(--card); border-right: 0; }
+  .phone input { border-radius: 0 4px 4px 0; letter-spacing: .02em; }
+  .err .phone b { box-shadow: inset 0 0 0 1.5px var(--red); }
+  /* Кнопка «Готово» над клавиатурой: прячет клавиатуру */
+  .donebar { position: fixed; left: 0; right: 0; top: 0; z-index: 20; display: none; justify-content: flex-end;
+             padding: 8px 12px; background: rgba(245, 245, 248, .96); border-bottom: 1.5px solid var(--card); }
+  .donebar button { border: 0; border-radius: 4px; background: var(--blue); color: #fff; font-size: 13px; font-weight: 600;
+                    padding: 9px 16px; cursor: pointer; }
+  body.typing .donebar { display: flex; }
+  body.typing .bar { display: none; }
 </style>
 </head>
 <body>
@@ -170,9 +187,9 @@
 
   <h2>Контакты</h2>
   <label class="f" id="f-name"><span id="name-label">Ваше имя</span>
-    <input id="name" maxlength="100" autocomplete="given-name" placeholder="Например, Анна"></label>
+    <input id="name" maxlength="100" autocomplete="given-name" enterkeyhint="next" placeholder="Например, Анна"></label>
   <label class="f hidden" id="f-student"><span>Имя ученика</span>
-    <input id="student" maxlength="100" placeholder="Например, Петя"></label>
+    <input id="student" maxlength="100" enterkeyhint="done" placeholder="Например, Петя"></label>
 
   <h2>Класс</h2>
   <div class="chips" id="grade">
@@ -191,16 +208,19 @@
   </div>
 
   <h2>Как с вами связаться</h2>
-  <div class="seg" id="contact">
-    <button class="chip" data-v="tg">В Telegram</button>
-    <button class="chip" data-v="phone">По телефону</button>
+  <div class="seg seg3" id="contact">
+    <button class="chip" data-v="tg">Telegram</button>
+    <button class="chip" data-v="whatsapp">WhatsApp*</button>
+    <button class="chip" data-v="phone">Звонок</button>
   </div>
-  <label class="f hidden" id="f-phone" style="margin-top:12px"><span>Телефон</span>
-    <input id="phone" type="tel" inputmode="tel" maxlength="20" autocomplete="tel" placeholder="+7 900 123-45-67"></label>
+  <label class="f hidden" id="f-phone" style="margin-top:12px"><span id="phone-label">Номер телефона</span>
+    <div class="phone"><b>+7</b><input id="phone" type="tel" inputmode="numeric" autocomplete="tel-national" enterkeyhint="done"
+      placeholder="(900) 123-45-67"></div></label>
+  <p class="foot-note">* WhatsApp — продукт компании Meta Platforms Inc., которая признана экстремистской организацией, её деятельность на территории Российской Федерации запрещена.</p>
 
   <div id="f-comment">
     <h2>Цель (необязательно)</h2>
-    <label class="f"><textarea id="comment" maxlength="500" placeholder="Например: сдать ОГЭ на 5, подтянуть геометрию"></textarea></label>
+    <label class="f"><textarea id="comment" maxlength="500" enterkeyhint="done" placeholder="Например: сдать ОГЭ на 5, подтянуть геометрию"></textarea></label>
   </div>
   <p class="msg hidden" id="form-msg">Заполните, пожалуйста, отмеченные поля</p>
 </section>
@@ -224,6 +244,8 @@
 </section>
 
 <p class="foot">NikolayMath — подготовка к ОГЭ и ЕГЭ<br>по математике без паники <span class="heart">♥</span></p>
+
+<div class="donebar" id="donebar"><button type="button" id="b-done">Готово</button></div>
 
 <div class="bar" id="bar">
   <button class="back hidden" id="b-back">Назад</button>
@@ -409,7 +431,10 @@
           $('f-student').classList.toggle('hidden', st.who !== 'parent');
           $('name-label').textContent = st.who === 'parent' ? 'Ваше имя' : 'Как вас зовут';
         }
-        if (f === 'contact') $('f-phone').classList.toggle('hidden', st.contact !== 'phone');
+        if (f === 'contact') {
+          $('f-phone').classList.toggle('hidden', !needPhone());
+          $('phone-label').textContent = st.contact === 'whatsapp' ? 'Номер WhatsApp' : 'Номер для звонка';
+        }
         if (st.tried) validate(true);
         sync();
       };
@@ -420,7 +445,23 @@
   });
 
   function val(id) { return $(id).value.trim(); }
-  function phoneOk() { var d = val('phone').replace(/\D/g, ''); return d.length >= 10 && d.length <= 15; }
+  function needPhone() { return st.contact === 'whatsapp' || st.contact === 'phone'; }
+  function phoneDigits() { return $('phone').value.replace(/\D/g, ''); }
+  function phoneOk() { return phoneDigits().length === 10; }
+  function phoneFull() { var d = phoneDigits(); return '+7 (' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6, 8) + '-' + d.slice(8); }
+  // Маска: только цифры, максимум 10; если вставили +7… или 8… — первая цифра отбрасывается
+  $('phone').addEventListener('input', function () {
+    var d = this.value.replace(/\D/g, '');
+    if (d[0] === '7') d = d.slice(1);                     // «+7» уже стоит — повторную 7 убираем
+    if (d.length > 10 && d[0] === '8') d = d.slice(1);    // набрали по привычке 8XXXXXXXXXX
+    d = d.slice(0, 10);
+    var out = '';
+    if (d.length) out = '(' + d.slice(0, 3);
+    if (d.length >= 3) out += ') ' + d.slice(3, 6);
+    if (d.length >= 6) out += '-' + d.slice(6, 8);
+    if (d.length >= 8) out += '-' + d.slice(8, 10);
+    this.value = out;
+  });
   function validate(mark) {
     var bad = {
       who: !st.who,
@@ -429,7 +470,7 @@
       grade: !st.grade,
       exam: !st.exam,
       contact: !st.contact,
-      'f-phone': st.contact === 'phone' && !phoneOk()
+      'f-phone': needPhone() && !phoneOk()
     };
     var ok = true;
     Object.keys(bad).forEach(function (k) {
@@ -456,7 +497,7 @@
     else addRow(box, 'Ученик', val('name') + ' (18+)');
     addRow(box, 'Класс', st.grade === 'other' ? 'другое' : st.grade + ' класс');
     addRow(box, 'Экзамен', EXAMS[st.exam]);
-    addRow(box, 'Связь', st.contact === 'phone' ? val('phone') : 'в Telegram');
+    addRow(box, 'Связь', st.contact === 'phone' ? 'звонок, ' + phoneFull() : st.contact === 'whatsapp' ? 'WhatsApp*, ' + phoneFull() : 'в Telegram');
     if (mode === 'book' && val('comment')) addRow(box, 'Цель', val('comment'));
   }
 
@@ -523,7 +564,7 @@
       v: 2, m: mode, slot: mode === 'book' && st.slot ? st.slot.id : null, tz: st.tz,
       who: st.who, name: val('name'), student_name: st.who === 'parent' ? val('student') : '',
       grade: st.grade, exam: st.exam, contact: st.contact,
-      phone: st.contact === 'phone' ? val('phone') : '',
+      phone: needPhone() ? phoneFull() : '',
       comment: mode === 'book' ? val('comment') : '', consent: true
     };
     var json = JSON.stringify(data);
@@ -538,6 +579,26 @@
     else $('b-back').classList.toggle('hidden', st.step === STEPS[0]);
   }
   $('b-main').onclick = next; $('b-back').onclick = back;
+  // ---- Клавиатура: кнопка «Готово», Enter = следующее поле / скрыть, тап мимо поля — скрыть
+  var fields = ['name', 'student', 'phone'];
+  function typing(on) { document.body.classList.toggle('typing', on); }
+  document.addEventListener('focusin', function (e) { if (/^(INPUT|TEXTAREA)$/.test(e.target.tagName) && e.target.type !== 'checkbox') typing(true); });
+  document.addEventListener('focusout', function () { setTimeout(function () {
+    var a = document.activeElement; typing(!!a && /^(INPUT|TEXTAREA)$/.test(a.tagName) && a.type !== 'checkbox'); }, 50); });
+  $('b-done').addEventListener('mousedown', function (e) { e.preventDefault(); });
+  $('b-done').onclick = function () { if (document.activeElement) document.activeElement.blur(); typing(false); };
+  fields.forEach(function (id) {
+    $(id).addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      if (id === 'name' && st.who === 'parent') { $('student').focus(); return; }
+      this.blur();
+    });
+  });
+  document.addEventListener('touchstart', function (e) {
+    var a = document.activeElement;
+    if (a && /^(INPUT|TEXTAREA)$/.test(a.tagName) && !e.target.closest('input, textarea, label, #donebar')) a.blur();
+  }, { passive: true });
   if (!inTg) $('preview').classList.remove('hidden');
   // Кнопку могли нажать спустя долгое время после того, как бот её прислал
   var sentAt = parseInt(params.get('t'), 10);
